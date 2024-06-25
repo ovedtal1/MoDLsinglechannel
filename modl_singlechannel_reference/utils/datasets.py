@@ -4,6 +4,8 @@ import random
 import nibabel as nib
 import numpy as np
 from torch.utils.data import Dataset
+from utils import transforms as T
+from utils import complex_utils as cplx
 
 class SliceData(Dataset):
     """
@@ -59,11 +61,15 @@ class SliceData(Dataset):
         data = nib.load(fname).get_fdata()
         ref_data = nib.load(ref_fname).get_fdata()
         
-        kspace = data[:, :, slice_idx]
-        target = kspace  # Assuming the target is the kspace data itself for now
+        target = data[:, :, slice_idx]
+        target_torch = cplx.to_tensor(target).float() 
+        kspace_torch = T.fft2(target_torch)
+        kspace = cplx.to_numpy(kspace_torch)
 
         # Reference slice data
-        ref_kspace = ref_data[:, :, slice_idx]
-        ref_target = ref_kspace  # Assuming the reference target is the kspace data itself for now
+        ref_target = ref_data[:, :, slice_idx]
+        ref_torch = cplx.to_tensor(target).float() 
+        ref_kspace_torch = T.fft2(ref_torch)
+        ref_kspace = cplx.to_numpy(ref_kspace_torch)
 
         return self.transform( kspace, target, ref_kspace, ref_target, slice_idx)

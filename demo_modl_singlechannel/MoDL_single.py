@@ -103,13 +103,10 @@ class UnrolledModel(nn.Module):
             # dc update
             image = image.permute(0,3,1,2) 
 #             pl.ImagePlot(image.detach().cpu())
-            print('Tal')
-            #image = image.abs()
             image = resnet(image)
             image = image.permute(0,2,3,1)
             rhs = zf_image + self.modl_lamda * image
             CG_alg = ConjGrad(Aop_fun=Sense.normal,b=rhs,verbose=False,l2lam=self.modl_lamda,max_iter=self.num_cg_steps)
             image = CG_alg.forward(rhs)
-            print(image.shape)
         
         return image

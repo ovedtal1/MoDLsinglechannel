@@ -215,7 +215,6 @@ def fft2(data):
 
     data = ifftshift(data, dim=(-3, -2))
     data_complex = torch.complex(data[...,0], data[...,1])
-    print(data_complex.shape)
     data_fft = torch.fft.fftn(data_complex,dim=(-2, -1), norm="ortho")
     data = torch.stack((data_fft.real, data_fft.imag), dim=-1)
     data = fftshift(data, dim=(-3, -2))
@@ -253,9 +252,7 @@ def ifft2(data):
         raise ValueError('ifft2: ndims > 6 not supported!')
 
     data = ifftshift(data, dim=(-3, -2))
-    #data = torch.fft.ifftn(data,dim=(-3, -2), norm="ortho")
     data_complex = torch.complex(data[...,0], data[...,1])
-    print(data_complex.shape)
     data_ifft = torch.fft.ifftn(data_complex,dim=(-2, -1), norm="ortho")
     data = torch.stack((data_ifft.real, data_ifft.imag), dim=-1)
     data = fftshift(data, dim=(-3, -2))
