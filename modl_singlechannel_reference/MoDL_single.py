@@ -52,6 +52,7 @@ class UnrolledModel(nn.Module):
         self.num_cg_steps = params.num_cg_steps
         self.share_weights = params.share_weights
         self.modl_lamda = params.modl_lamda
+        self.reference_mode = params.reference_mode
 
         # Declare ResNets and RNNs for each unrolled iteration
         if self.share_weights:
@@ -109,14 +110,15 @@ class UnrolledModel(nn.Module):
 
             #print(image.shape)
             # Combine the output of ResNet with the reference image
-            combined_input = torch.cat([image, reference_image], dim=3)  # Concatenate along the channel dimension
-            #print(combined_input.shape)
-            combined_input = combined_input.permute(0, 3, 1, 2)  # Permute to [batch_size, channels, height, width]
-            refined_image = similaritynet(combined_input)
-            refined_image = refined_image.permute(0, 2, 3, 1)  # Permute back to original shape
+            if (self.reference_mode == 1):
+                combined_input = torch.cat([image, reference_image], dim=3)  # Concatenate along the channel dimension
+                #print(combined_input.shape)
+                combined_input = combined_input.permute(0, 3, 1, 2)  # Permute to [batch_size, channels, height, width]
+                refined_image = similaritynet(combined_input)
+                image = refined_image.permute(0, 2, 3, 1)  # Permute back to original shape
+            
 
-
-            rhs = zf_image + self.modl_lamda * refined_image
+            rhs = zf_image + self.modl_lamda * image
             CG_alg = ConjGrad(Aop_fun=Sense.normal,b=rhs,verbose=False,l2lam=self.modl_lamda,max_iter=self.num_cg_steps)
             image = CG_alg.forward(rhs)
         
