@@ -107,9 +107,9 @@ class UnrolledModel(nn.Module):
         for resnet, similaritynet in zip(self.resnets, self.similaritynets):
             # ResNet Denoiser
             #image = torch.cat([image, reference_image], dim=3)
-            image = image.permute(0,3,1,2) 
-            image = resnet(image)
-            image = image.permute(0,2,3,1)
+            #image = image.permute(0,3,1,2) 
+            #image = resnet(image)
+            #image = image.permute(0,2,3,1)
 
             #print(image.shape)
             # Combine the output of ResNet with the reference image
@@ -121,9 +121,9 @@ class UnrolledModel(nn.Module):
                 refined_image = refined_image.permute(0, 2, 3, 1) # Permute back to original shape
                 image = refined_image
                 #image = refined_image.permute(0, 2, 3, 1)
-            #image = image.permute(0,3,1,2) 
-            #image = resnet(image)
-            #image = image.permute(0,2,3,1)
+            image = image.permute(0,3,1,2) 
+            image = resnet(image)
+            image = image.permute(0,2,3,1)
            
 
 
