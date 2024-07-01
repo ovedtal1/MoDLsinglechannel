@@ -42,8 +42,11 @@ class SliceData(Dataset):
             basename = os.path.basename(file)
             if 'T1_week' in basename:
                 week_number = ''.join(filter(str.isdigit, basename.split('T1_week')[1].split('reg')[0]))
-                reference_pattern = f"T1_week{week_number}regT1_week*.nii"
+                #print(week_number)
+                #print(file)
+                reference_pattern = f"T1_week*regT1_week{week_number}.nii"
                 reference_files = glob.glob(os.path.join(os.path.dirname(file), reference_pattern))
+                #print(reference_files[0])
                 if reference_files:
                     ref_file = reference_files[0]
                     data = nib.load(file).get_fdata()
@@ -63,9 +66,16 @@ class SliceData(Dataset):
         
         target = data[:, :, slice_idx]
         target_torch = cplx.to_tensor(target).float() 
+
+        ## Reduce contrast
+        target_reduced = T.reduce_contrast(target.copy(),factor=1)
+        target_reduced_torch = cplx.to_tensor(target_reduced).float() 
+        ##
+
         kspace_torch = T.fft2(target_torch)
         kspace = cplx.to_numpy(kspace_torch)
 
+        
         # Reference slice data
         ref_target = ref_data[:, :, slice_idx]
         ref_torch = cplx.to_tensor(target).float() 

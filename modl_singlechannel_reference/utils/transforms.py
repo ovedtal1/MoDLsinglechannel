@@ -434,7 +434,7 @@ def add_rician_noise_torch(complex_data, v, sg):
     return noisy_complex_data
 
 
-def awgn(sig,SNRdB,L=1):
+def awgn_torch(sig,SNRdB,L=1):
     """
     AWGN channel
     Add AWGN noise to input signal. The function adds AWGN noise vector to signal 's' to generate a resulting signal vector 'r' of specified SNR in dB. It also
@@ -466,3 +466,57 @@ def awgn(sig,SNRdB,L=1):
 
     return noisy_complex_data
     
+   
+def awgn(sig,SNRdB,L=1):
+    """
+    AWGN channel
+    Add AWGN noise to input signal. The function adds AWGN noise vector to signal 's' to generate a resulting signal vector 'r' of specified SNR in dB. It also
+    returns the noise vector 'n' that is added to the signal 's' and the power spectral density N0 of noise added
+    Parameters:
+        s : input/transmitted signal vector
+        SNRdB : desired signal to noise ratio (expressed in dB) for the received signal
+        L : oversampling factor (applicable for waveform simulation) default L = 1.
+    Returns:
+        r : received signal vector (r=s+n)
+        """
+    s = sig
+    gamma = 10**(SNRdB/10) #SNR to linear scale
+    if s.ndim==1:# if s is single dimensional vector
+        P=L*sum(abs(s)**2)/len(s) #Actual power in the vector
+    else: # multi-dimensional signals like MFSK
+        P=L*sum(sum(abs(s)**2))/np.size(s)#np.size(s) # if s is a matrix [MxN]
+    N0=P/gamma # Find the noise spectral density
+    if np.isrealobj(s):# check if input is real/complex object type
+        n = np.sqrt(N0)*np.random.randn(s.shape[0],s.shape[1]) # computed noise
+    else:
+        n = np.sqrt(N0/2)*(np.random.randn(s.shape[0],s.shape[1])+1j*np.random.randn(s.shape[0],s.shape[1]))
+    r = s + n # received signal
+
+    return r
+
+def reduce_contrast(image, factor=0.5):
+    """
+    Reduce the contrast of a float image.
+
+    Parameters:
+    - image: numpy array, input image (float32 or float64).
+    - factor: float, factor by which to reduce the contrast (0 < factor < 1).
+
+    Returns:
+    - numpy array, image with reduced contrast.
+    """
+    # Ensure the image is in float32 format
+    image = image.astype(np.float32)
+
+    # Calculate the mean intensity of the image
+    mean_intensity = np.mean(image)
+
+    # Apply the contrast reduction formula
+    reduced_contrast_image = mean_intensity + factor * (image - mean_intensity)
+
+    return reduced_contrast_image
+
+
+def PSNR(input, target):
+    eps = 1e-8
+    return -10*torch.log10(torch.mean((input - target) ** 2, dim=[1, 2, 3])+eps)
