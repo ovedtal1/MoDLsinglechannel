@@ -5,6 +5,85 @@ import utils.complex_utils as cplx
 from utils.transforms import SenseModel,SenseModel_single
 from utils.flare_utils import ConjGrad
 
+
+############### Transformer code ################
+
+class PatchEmbedding(nn.Module):
+    def __init__(self, img_height, img_width, patch_size, in_channels, embed_dim):
+        super(PatchEmbedding, self).__init__()
+        self.img_height = img_height
+        self.img_width = img_width
+        self.patch_size = patch_size
+        self.num_patches = (img_height // patch_size) * (img_width // patch_size)
+        self.embed_dim = embed_dim
+        self.proj = nn.Conv2d(in_channels, embed_dim, kernel_size=patch_size, stride=patch_size)
+    
+    def forward(self, x):
+        x = self.proj(x)  # (B, embed_dim, H/patch_size, W/patch_size)
+        x = x.flatten(2)  # (B, embed_dim, num_patches)
+        x = x.transpose(1, 2)  # (B, num_patches, embed_dim)
+        return x
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, embed_dim, num_patches):
+        super(PositionalEncoding, self).__init__()
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim))
+    
+    def forward(self, x):
+        return x + self.pos_embed
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, embed_dim, num_heads, num_layers, forward_expansion):
+        super(TransformerEncoder, self).__init__()
+        encoder_layer = nn.TransformerEncoderLayer(d_model=embed_dim, nhead=num_heads, dim_feedforward=embed_dim * forward_expansion)
+        self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+    
+    def forward(self, x):
+        return self.encoder(x)
+
+class ConvDecoder(nn.Module):
+    def __init__(self, embed_dim, patch_size, img_height, img_width, out_channels):
+        super(ConvDecoder, self).__init__()
+        self.patch_size = patch_size
+        self.embed_dim = embed_dim
+        self.img_height = img_height
+        self.img_width = img_width
+        self.num_patches = (img_height // patch_size) * (img_width // patch_size)
+        self.avg_pool = nn.AvgPool2d(kernel_size=patch_size, stride=16)
+
+        # Ensure stride and padding are set correctly to match the output size
+        self.deconv = nn.Sequential(
+            nn.ConvTranspose2d(embed_dim, embed_dim // 2, kernel_size=patch_size, stride=patch_size, padding=0),
+            nn.ReLU(),
+            nn.ConvTranspose2d(embed_dim // 2, out_channels, kernel_size=patch_size, stride=patch_size, padding=0)
+        )
+
+    def forward(self, x):
+        B, num_patches, embed_dim = x.size()
+        x = x.transpose(1, 2)  # (B, embed_dim, num_patches)
+        x = x.view(B, embed_dim, self.img_height // self.patch_size, self.img_width // self.patch_size)  # (B, embed_dim, H/patch_size, W/patch_size)
+        return self.avg_pool(self.deconv(x))
+
+
+
+class TransformerImage2Image(nn.Module):
+    def __init__(self, img_height=256, img_width=160, patch_size=16, in_channels=4, out_channels=2, embed_dim=768, num_heads=8, num_layers=6, forward_expansion=4):
+        super(TransformerImage2Image, self).__init__()
+        self.patch_embed = PatchEmbedding(img_height, img_width, patch_size, in_channels, embed_dim)
+        self.pos_embed = PositionalEncoding(embed_dim, (img_height // patch_size) * (img_width // patch_size))
+        self.transformer_encoder = TransformerEncoder(embed_dim, num_heads, num_layers, forward_expansion)
+        self.decoder = ConvDecoder(embed_dim, patch_size, img_height, img_width, out_channels)
+    
+    def forward(self, x):
+        x = self.patch_embed(x)
+        x = self.pos_embed(x)
+        x = self.transformer_encoder(x)
+        x = self.decoder(x)
+        return x
+
+
+################ CNN spattial ##################
 class Operator(torch.nn.Module):
     def __init__(self, A):
         super(Operator, self).__init__()
@@ -86,10 +165,11 @@ class MyNetwork(nn.Module):
         self.residual_groups1 = ResidualGroup(64, num_blocks)
         self.residual_groups2 = ResidualGroup(64, num_blocks)
         self.residual_groups3 = ResidualGroup(64, num_blocks)
-        self.mrcabs = mRCAB(64)
+        self.mrcabs = mRCAB(64) #128
         self.spatial_attention = SpatialAttention()
-        self.sub_pixel_conv = SubPixelConv(64, 64)
+        self.sub_pixel_conv = SubPixelConv(64, 64) #(128,64)
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=3, stride=1, padding=1)
+        self.final_transformer = TransformerImage2Image(img_height=256, img_width=160, patch_size=16, in_channels=4, out_channels=2, embed_dim=1024, num_heads=8, num_layers=6, forward_expansion=4)
         
     def forward(self, kspace, reference_image,init_image=None, mask=None):
         #if mask is None:
@@ -109,21 +189,46 @@ class MyNetwork(nn.Module):
         x = kspace
         #print(f'After adjoint: {x.shape}')
         #trilnear = F.interpolate(x, scale_factor=2, mode='trilinear', align_corners=True)
+
+
+        ## input part1
         x = self.initial_conv(x)
         #print(f'After initial_conv: {x.shape}')
-
         res1 = self.residual_groups1(x)
         #print(f'After res1: {res1.shape}')
         res2 = self.residual_groups2(res1)
         #print(f'After res2: {res2.shape}')
         res3 = self.residual_groups3(res2)
         #print(f'After res3: {res3.shape}')
+
+        ## reference part1
+        #reference_image = self.initial_conv(reference_image)
+        #print(f'After initial_conv: {reference_image_ref.shape}')
+        #res1_ref = self.residual_groups1(reference_image)
+        #print(f'After res1: {res1_ref.shape}')
+        #res2_ref = self.residual_groups2(res1_ref)
+        #print(f'After res2: {res2_ref.shape}')
+        #res3_ref = self.residual_groups3(res2_ref)
+        #print(f'After res3: {res3_ref.shape}')
+
+        ## Combine paths
+        #combined = torch.cat([res3, res3_ref], dim=1)
+
+        ## Combined path
         x = self.mrcabs(res3)
         x = self.spatial_attention(x) * x
         #print(f'After spatial_attention: {x.shape}')
         x = self.sub_pixel_conv(x)
         #print(f'After sub_pixel conv: {x.shape}')
         x = self.final_conv(x)
+
+        x = torch.cat([x, reference_image], dim=1)
+        #print(f'After cat: {x.shape}')
+
+        x = self.final_transformer(x)
+        #print(f'After transformer: {x.shape}')
         #print(f'After final conv: {x.shape}')
         #x = x.permute(0,2,3, 1)
         return x 
+
+

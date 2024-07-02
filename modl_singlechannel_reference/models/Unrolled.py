@@ -103,7 +103,7 @@ class Unrolled(nn.Module):
         
 #         sys.exit()
         image = zf_image 
-        
+        reference_image = reference_image.permute(0,3,1,2) 
         # Begin unrolled proximal gradient descent
         for resnet, similaritynet in zip(self.resnets, self.similaritynets):
             # ResNet Denoiser
