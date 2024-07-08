@@ -15,8 +15,9 @@ from unet.unet_model import UNet
 from unet.unet_model import UNetPrior
 from utils.flare_utils import ConjGrad
 import matplotlib
-from models.SAmodel import MyNetwork
-
+from models.SAmodelRef import MyNetwork
+from models.Transformer import TransUNet
+from vit_pytorch import ViT, MAE
 # matplotlib.use('TkAgg')
 
 class Operator(torch.nn.Module):
@@ -34,7 +35,7 @@ class Operator(torch.nn.Module):
         out = self.adjoint(self.forward(x))
         return out
 
-class Unrolled(nn.Module):
+class UnrolledTrans(nn.Module):
     """
     PyTorch implementation of Unrolled Compressed Sensing.
 
@@ -57,11 +58,13 @@ class Unrolled(nn.Module):
         self.modl_lamda = params.modl_lamda
         self.reference_mode = params.reference_mode
         self.reference_lambda = params.reference_lambda
-
+        #v = ViT(image_size = 256,patch_size = 32,num_classes = 1000,dim = 1024,depth = 6,heads = 8,mlp_dim = 2048)
         # Declare ResNets and RNNs for each unrolled iteration
         if self.share_weights:
             print("shared weights")
-            self.resnets = nn.ModuleList([MyNetwork(2,2)] * self.num_grad_steps)
+            #self.resnets = nn.ModuleList([MAE(encoder = v, masking_ratio = 0.75, decoder_dim = 512,decoder_depth = 6)] * self.num_grad_steps)
+            self.resnets = nn.ModuleList([TransUNet(img_channels=2)] * self.num_grad_steps)
+            
             self.similaritynets = nn.ModuleList([UNetPrior(4,2)] * self.num_grad_steps)
         else:
             print("No shared weights")
@@ -104,9 +107,9 @@ class Unrolled(nn.Module):
         
 #         sys.exit()
         image = zf_image 
+        reference_image = reference_image.permute(0,3,1,2)
         #reference_image = reference_image.permute(0,3,1,2) 
         # Begin unrolled proximal gradient descent
-        iter = 1
         for resnet, similaritynet in zip(self.resnets, self.similaritynets):
             # ResNet Denoiser
             #image = torch.cat([image, reference_image], dim=3)
@@ -125,12 +128,13 @@ class Unrolled(nn.Module):
                 image = refined_image
                 #image = refined_image.permute(0, 2, 3, 1)
             #image = torch.cat([image, reference_image], dim=2) # for transformer
-            image = image.permute(0,3,1,2) 
-            image = resnet(kspace=image,reference_image=reference_image,iter=iter)
+            image = image.permute(0,3,1,2)  
+            image = resnet(x=image,reference_image=reference_image)
+            #image = resnet(image)
             #image = resnet(image)
             image = image.permute(0,2,3,1)
-            iter = iter +1
-
+            
+            #print(f'Image shape befir CG: {image.shape}')
             rhs = zf_image + self.modl_lamda * image
             CG_alg = ConjGrad(Aop_fun=Sense.normal,b=rhs,verbose=False,l2lam=self.modl_lamda,max_iter=self.num_cg_steps)
             image = CG_alg.forward(rhs)

@@ -520,3 +520,79 @@ def reduce_contrast(image, factor=0.5):
 def PSNR(input, target):
     eps = 1e-8
     return -10*torch.log10(torch.mean((input - target) ** 2, dim=[1, 2, 3])+eps)
+
+
+def kspace_crop(tensor, r):
+    """
+    Zero out the edges of a tensor in both spatial dimensions by a factor of r.
+    
+    Args:
+        tensor (torch.Tensor): Input tensor of shape (C, A, B).
+        r (float): Factor to determine the width of the edge to zero out. 
+                   r should be between 0 and 1, where 1 means no edges are zeroed, 
+                   and 0 means the entire tensor is zeroed out.
+    
+    Returns:
+        torch.Tensor: Tensor with edges zeroed out by factor r, same size as input.
+    """
+    assert 0 <= r <= 1, "Factor r should be between 0 and 1."
+
+    A, B, C = tensor.shape
+    a_margin = int(A * (1 - r) / 2)
+    b_margin = int(B * (1 - r) / 2)
+    
+    # Create a copy of the tensor to avoid modifying the original tensor
+    tensor_cropped = tensor.clone()
+    
+    # Zero out edges
+    tensor_cropped[:a_margin, :,:] = 0
+    tensor_cropped[-a_margin:, :,:] = 0
+    tensor_cropped[:, :b_margin,:] = 0
+    tensor_cropped[:, -b_margin:,:] = 0
+
+    return tensor_cropped
+
+def kspace_cut(tensor, r):
+    """
+    Zero out the edges of a tensor in both spatial dimensions by a factor of r.
+    
+    Args:
+        tensor (torch.Tensor): Input tensor of shape (C, A, B).
+        r (float): Factor to determine the width of the edge to zero out. 
+                   r should be between 0 and 1, where 1 means no edges are zeroed, 
+                   and 0 means the entire tensor is zeroed out.
+    
+    Returns:
+        torch.Tensor: Tensor with edges zeroed out by factor r, same size as input.
+    """
+    assert 0 <= r <= 1, "Factor r should be between 0 and 1."
+
+    A, B, C = tensor.shape
+    a_margin = int(A * (1 - r) / 2)
+    b_margin = int(B * (1 - r) / 2)
+    
+    # Create a copy of the tensor to avoid modifying the original tensor
+    tensor_cropped = tensor.clone()
+    
+    # Zero out edges
+    tensor_out = tensor_cropped[a_margin:-a_margin,b_margin:-b_margin,:]
+
+    return tensor_out
+
+def ifft2c(tensor, dim=(-2, -1)):
+    tensor = torch.fft.ifftshift(tensor, dim=dim)
+    tensor = torch.fft.ifft2(tensor, dim=dim)
+    return torch.fft.fftshift(tensor, dim=dim)
+
+def random_map(shape, device, kspace_radius_range=(0.001, 0.05), crop_middle=True, normalize=True):
+        batch_size, height, width = shape
+
+        # kspace weight
+        x, y = torch.meshgrid(torch.linspace(-0.5, 0.5, height, device=device),
+                              torch.linspace(-0.5, 0.5, width, device=device),indexing='ij')
+        r = torch.sqrt(x ** 2 + y ** 2)
+        kspace_parameter = 1 / torch.FloatTensor(batch_size).uniform_(*kspace_radius_range).to(device)
+
+        kspace = 2 * torch.rand(shape, dtype=torch.cfloat, device=device) - 1 - 1j  # Channels first
+        kspace = kspace * torch.exp(-r.type(torch.cfloat) * kspace_parameter[:, None, None])
+        return  ifft2c(kspace)

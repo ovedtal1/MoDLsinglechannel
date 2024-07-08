@@ -1,6 +1,7 @@
 import os
 import glob
 import random
+import torch
 import nibabel as nib
 import numpy as np
 from torch.utils.data import Dataset
@@ -65,11 +66,14 @@ class SliceData(Dataset):
         ref_data = nib.load(ref_fname).get_fdata()
         
         target = data[:, :, slice_idx]
+        random_phase = torch.angle(T.random_map((1,256,160), 'cpu',kspace_radius_range=(0.001, 0.001))) 
+        target = target * (torch.exp(1j * random_phase)).numpy() 
+        target = target.squeeze(0)
         target_torch = cplx.to_tensor(target).float() 
 
         ## Reduce contrast
-        target_reduced = T.reduce_contrast(target.copy(),factor=1)
-        target_reduced_torch = cplx.to_tensor(target_reduced).float() 
+        #target_reduced = T.reduce_contrast(target.copy(),factor=1)
+        #target_reduced_torch = cplx.to_tensor(target_reduced).float() 
         ##
 
         kspace_torch = T.fft2(target_torch)

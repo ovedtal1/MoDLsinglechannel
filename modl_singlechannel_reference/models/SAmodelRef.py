@@ -136,6 +136,7 @@ class ResidualGroup(nn.Module):
     def forward(self, x):
         return x + self.blocks(x)
 
+## Attention for 1 arrays
 class SpatialAttention(nn.Module):
     def __init__(self, kernel_size=7):
         super(SpatialAttention, self).__init__()
@@ -148,6 +149,39 @@ class SpatialAttention(nn.Module):
         x = torch.cat([avg_out, max_out], dim=1)
         x = self.conv1(x)
         return self.sigmoid(x)
+
+## Attention for 2 arrays ########
+
+class AttentionMechanism(nn.Module):
+    def __init__(self):
+        super(AttentionMechanism, self).__init__()
+        self.conv1 = nn.Conv2d(2, 1, kernel_size=7,padding=3, bias=False)
+        self.conv2 = nn.Conv2d(2, 1, kernel_size=7,padding=3, bias=False)
+        self.sigmoid_noisy = nn.Sigmoid()
+        self.sigmoid_prior = nn.Sigmoid()
+
+    def forward(self, noisy_features, prior_features):
+        avg_out_noisy = torch.mean(noisy_features, dim=1, keepdim=True)
+        max_out_noisy, _ = torch.max(noisy_features, dim=1, keepdim=True)
+        avg_out_pior = torch.mean(prior_features, dim=1, keepdim=True)
+        max_out_pior, _ = torch.max(prior_features, dim=1, keepdim=True)
+        combined_features = torch.cat((avg_out_noisy, max_out_noisy), dim=1)
+        combined_features_prior = torch.cat((avg_out_pior,max_out_pior), dim=1)
+        noisy_weights = self.sigmoid_noisy(self.conv1(combined_features))
+        prior_weights = self.sigmoid_prior(self.conv2(combined_features_prior))
+        return noisy_weights,prior_weights
+
+
+
+class FeatureFusion(nn.Module):
+    def __init__(self):
+        super(FeatureFusion, self).__init__()
+
+    def forward(self, noisy_features, prior_features, noisy_weights,prior_weights):
+        fused_features = prior_weights * prior_features * 0 + noisy_weights * noisy_features
+        return fused_features
+    
+ ####################################   
 
 class SubPixelConv(nn.Module):
     def __init__(self, in_channels, out_channels, upscale_factor=1):
@@ -165,13 +199,25 @@ class MyNetwork(nn.Module):
         self.residual_groups1 = ResidualGroup(64, num_blocks)
         self.residual_groups2 = ResidualGroup(64, num_blocks)
         self.residual_groups3 = ResidualGroup(64, num_blocks)
-        self.mrcabs = mRCAB(64) #128
+        self.mrcabs = mRCAB(64) 
+        ## Reference
+        self.initial_conv_ref = LeakyReLUConv(in_channels, 64)
+        self.residual_groups1_ref = ResidualGroup(64, num_blocks)
+        self.residual_groups2_ref = ResidualGroup(64, num_blocks)
+        self.residual_groups3_ref = ResidualGroup(64, num_blocks)
+        self.mrcabs_ref = mRCAB(64) #128
+
+
         self.spatial_attention = SpatialAttention()
-        self.sub_pixel_conv = SubPixelConv(64, 64) #(128,64)
+        ## Test for reference ###
+        self.attention_mechanism = AttentionMechanism()
+        self.feature_fusion = FeatureFusion()
+        ##########################
+        self.sub_pixel_conv = SubPixelConv(128, 64) #(64,64)
         self.final_conv = nn.Conv2d(64, out_channels, kernel_size=3, stride=1, padding=1)
-        self.sub_pixel_conv_end = SubPixelConv(64, 64,upscale_factor=2)
+        self.final_transformer = TransformerImage2Image(img_height=256, img_width=160, patch_size=16, in_channels=4, out_channels=2, embed_dim=1024, num_heads=8, num_layers=6, forward_expansion=4)
         
-    def forward(self, kspace, reference_image,init_image=None, mask=None,iter=0):
+    def forward(self, kspace, reference_image,init_image=None, mask=None):
         #if mask is None:
         #    mask = cplx.get_mask(kspace)
         #kspace *= mask
@@ -200,32 +246,34 @@ class MyNetwork(nn.Module):
         #print(f'After res2: {res2.shape}')
         res3 = self.residual_groups3(res2)
         #print(f'After res3: {res3.shape}')
+        x = self.mrcabs(res3)
 
         ## reference part1
-        #reference_image = self.initial_conv(reference_image)
-        #print(f'After initial_conv: {reference_image_ref.shape}')
-        #res1_ref = self.residual_groups1(reference_image)
-        #print(f'After res1: {res1_ref.shape}')
-        #res2_ref = self.residual_groups2(res1_ref)
-        #print(f'After res2: {res2_ref.shape}')
-        #res3_ref = self.residual_groups3(res2_ref)
-        #print(f'After res3: {res3_ref.shape}')
+        #print(f'Before initial_conv: {reference_image.shape}')
+        reference_image = self.initial_conv_ref(reference_image)
+        #print(f'After initial_conv ref: {reference_image.shape}')
+        res1_ref = self.residual_groups1_ref(reference_image)
+        #print(f'After res1 ref: {res1_ref.shape}')
+        res2_ref = self.residual_groups2_ref(res1_ref)
+        #print(f'After res2 ref: {res2_ref.shape}')
+        res3_ref = self.residual_groups3_ref(res2_ref)
+        #print(f'After res3 ref: {res3_ref.shape}')
+        reference_image = self.mrcabs_ref(res3_ref)
 
-        ## Combine paths
-        #combined = torch.cat([res3, res3_ref], dim=1)
+        ## Spatial Attention layer
+        #x = self.spatial_attention(x) * x
+        #print(f'Before spatial_attention: {x.shape}')
+        noisy_weights,prior_weights = self.attention_mechanism(x, reference_image)
+        #x = self.feature_fusion(x, reference_image,noisy_weights,prior_weights)
+        x = noisy_weights * x
+        prior_features = reference_image * prior_weights
 
-        ## Combined path
-        x = self.mrcabs(res3)
-        x = self.spatial_attention(x) * x
+        x = torch.cat((x,prior_features), dim=1)
+
+
         #print(f'After spatial_attention: {x.shape}')
-        #if iter == 5:
-        #    x = self.sub_pixel_conv_end(x)
-        #    x = self.final_conv(x)
-        #    trilnear = F.interpolate(kspace, scale_factor=2, mode='trilinear', align_corners=True)
-        #    x = x + trilnear
-        #if iter != 5:
         x = self.sub_pixel_conv(x)
-            #print(f'After sub_pixel conv: {x.shape}')
+        #print(f'After sub_pixel conv: {x.shape}')
         x = self.final_conv(x)
 
         #x = torch.cat([x, reference_image], dim=1)
