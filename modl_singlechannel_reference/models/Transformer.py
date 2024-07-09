@@ -3,6 +3,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 import numpy as np
+from models.features_extract import deep_features
+from models.extractor import ViTExtractor
+
 """
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
@@ -290,28 +293,62 @@ class UpBlock(nn.Module):
         x = torch.cat([x2, x1], dim=1)
         return self.conv(x)
 
+class CustomDecoder(nn.Module):
+    def __init__(self):
+        super(CustomDecoder, self).__init__()
+        self.fc1 = nn.Linear(104832, 1024)  # Reduce dimensionality significantly
+        self.fc2 = nn.Linear(1024, 128 * 43 * 27)
+        self.deconv_layers = nn.Sequential(
+            nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1),  # Output: (batch, 64, 86, 54)
+            nn.ReLU(),
+            nn.ConvTranspose2d(64, 32, kernel_size=4, stride=2, padding=1),   # Output: (batch, 32, 172, 108)
+            nn.ReLU(),
+            nn.Conv2d(32, 16, kernel_size=3, padding=1),                       # Output: (batch, 16, 172, 108)
+            nn.ReLU(),
+            nn.Conv2d(16, 2, kernel_size=3, padding=1),                        # Output: (batch, 2, 172, 108)
+            nn.Sigmoid()  # Assuming you want output in the range [0, 1]
+        )
+
+    def forward(self, x):
+        batch_size = x.size(0)
+        #print(f'Batch size: {batch_size}')
+        x = x.reshape(batch_size, -1)  # Flatten the input using reshape
+        #print(f'Before FC1: {x.shape}')
+        x = self.fc1(x)
+        #print(f'Before FC2: {x.shape}')
+        x = self.fc2(x)
+        x = x.reshape(batch_size, 128, 43, 27)  # Reshape using reshape
+        #print(f'Before deconv-layer: {x.shape}')
+        x = self.deconv_layers(x)
+        return x
+
 class TransUNet(nn.Module):
     def __init__(self, img_channels, base_channels=128 ):
         super(TransUNet, self).__init__()
         
-        self.encoder1 = ConvBlock(img_channels, base_channels)
-        self.encoder2 = ConvBlock(base_channels, base_channels * 2)
-        self.encoder3 = ConvBlock(base_channels * 2, base_channels * 4)
-        self.encoder4 = ConvBlock(base_channels * 4, base_channels * 8)
+        #self.encoder1 = ConvBlock(img_channels, base_channels)
+        #self.encoder2 = ConvBlock(base_channels, base_channels * 2)
+        #self.encoder3 = ConvBlock(base_channels * 2, base_channels * 4)
+        #self.encoder4 = ConvBlock(base_channels * 4, base_channels * 8)
         
-        self.pool = nn.MaxPool2d(2)
+        #self.pool = nn.MaxPool2d(2)
         
         # Adjust dimensions to match the expected input size for the transformer
         self.transformer = VisionTransformer(img_size=(32,20), patch_size=4, in_channels=1024, hidden_size=768, num_layers=12, num_attention_heads=12, mlp_dim=3072, dropout_rate=0.1, attention_dropout_rate=0.1)
         
-        self.up1 = UpBlock(base_channels * 8, base_channels * 4)
-        self.up2 = UpBlock(base_channels * 4, base_channels * 2)
-        self.up3 = UpBlock(base_channels * 2, base_channels)
+        #self.up1 = UpBlock(base_channels * 8, base_channels * 4)
+        #self.up2 = UpBlock(base_channels * 4, base_channels * 2)
+        #self.up3 = UpBlock(base_channels * 2, base_channels)
 
         
-        self.final_conv = nn.Conv2d(base_channels, img_channels, kernel_size=1)
+        #self.final_conv = nn.Conv2d(base_channels, img_channels, kernel_size=1)
+        pretrained_weights = './dino_deitsmall8_pretrain_full_checkpoint.pth'
+        self.extractor = ViTExtractor('dino_vits8', stride=8, model_dir=pretrained_weights, device='cuda:0')
+        self.decoder = CustomDecoder()
+
 
     def forward(self, x,reference_image):
+        """
         # Encoder
         x1 = self.encoder1(x)
         #print(f'after encoder1: {x1.shape}')
@@ -320,9 +357,23 @@ class TransUNet(nn.Module):
         x3 = self.encoder3(self.pool(x2))
         #print(f'after encoder3: {x3.shape}')
         x4 = self.encoder4(self.pool(x3))
+        """
 
         # Transformer
-        x = self.transformer(x4,reference_image)
+        #x = self.transformer(x4,reference_image)
+        x = torch.cat([x,x[:,1,:,:].unsqueeze(1)],dim =1)
+        #print(f'Before transformer: {x.shape}')
+        #x = deep_features(x, self.extractor, layer=11, facet='key', bin=False, device='cuda:0')
+        with torch.no_grad():  # Disable gradient calculation for extractor
+            features = self.extractor.extract_descriptors(x, layer=11, facet='key', bin=False)
+
+
+        #print(f'After transformer: {features.shape}')
+        x = self.decoder(features)
+
+
+
+        """
         #print(f'size after transformer: {x3.size()}')
         # Decoder
         x = self.up1(x, x3)
@@ -331,5 +382,10 @@ class TransUNet(nn.Module):
         #print(f'size after up2: {x.size()}')
         x = self.up3(x, x1)
         #print(f'size after up3: {x.size()}')
-        
-        return self.final_conv(x)
+        """
+
+        return x
+    
+
+
+

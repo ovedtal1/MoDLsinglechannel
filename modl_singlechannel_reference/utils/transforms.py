@@ -570,12 +570,10 @@ def kspace_cut(tensor, r):
     A, B, C = tensor.shape
     a_margin = int(A * (1 - r) / 2)
     b_margin = int(B * (1 - r) / 2)
-    
-    # Create a copy of the tensor to avoid modifying the original tensor
-    tensor_cropped = tensor.clone()
+
     
     # Zero out edges
-    tensor_out = tensor_cropped[a_margin:-a_margin,b_margin:-b_margin,:]
+    tensor_out = tensor[a_margin:-a_margin,b_margin:-b_margin,:]
 
     return tensor_out
 

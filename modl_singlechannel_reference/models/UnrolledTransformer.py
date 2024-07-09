@@ -17,7 +17,7 @@ from utils.flare_utils import ConjGrad
 import matplotlib
 from models.SAmodelRef import MyNetwork
 from models.Transformer import TransUNet
-from vit_pytorch import ViT, MAE
+
 # matplotlib.use('TkAgg')
 
 class Operator(torch.nn.Module):
