@@ -70,15 +70,15 @@ class Unrolled(nn.Module):
         self.reference_lambda = params.reference_lambda
         self.device = 'cuda:0'
         #self.similarity = ImageFusionBlock().to(self.device)
-        self.similarity = DenseFuseNet().to(self.device)
-        checkpoint = torch.load('./ImageFusion_Dualbranch_Fusion/weights/best.pkl')
+        #self.similarity = DenseFuseNet().to(self.device)
+        #checkpoint = torch.load('./ImageFusion_Dualbranch_Fusion/weights/best.pkl')
         # checkpoint = torch.load('./train_result/model_weight_new.pkl')
-        self.similarity.load_state_dict(checkpoint['weight'])
+        #self.similarity.load_state_dict(checkpoint['weight'])
         # Declare ResNets and RNNs for each unrolled iteration
         if self.share_weights:
             print("shared weights")
             self.resnets = nn.ModuleList([MyNetwork(2,2)] * self.num_grad_steps)
-            self.similaritynets = nn.ModuleList([myIFCNN(fuse_scheme=0)] * self.num_grad_steps)
+            self.similaritynets = nn.ModuleList([UNetPrior(4,2)] * self.num_grad_steps)
         else:
             print("No shared weights")
             self.resnets = nn.ModuleList([MyNetwork(2,2) for i in range(self.num_grad_steps)])
@@ -144,32 +144,35 @@ class Unrolled(nn.Module):
             image = image.permute(0,3,1,2) 
             #image = resnet(kspace=image,reference_image=reference_image,iter=iter)
             #image = resnet(image)
-            
-            if iter < 10:
-                #with torch.no_grad():    
-                real_part = image[:,0,:, :]
-                imag_part = image[:,1,:, :]
-                real_part_ref = reference_image[:,0,:, :]
-                imag_part_ref = reference_image[:,1,:, :]
-                phase = torch.atan2(imag_part, real_part)
-                image_in = torch.sqrt(real_part**2 + imag_part**2).unsqueeze(1)
-                reference_in = torch.sqrt(real_part_ref**2 + imag_part_ref**2).unsqueeze(1)
-                #print(f'in similarity shape: {image_in.shape}')
-                feature1a, feature2a = self.similarity.encoder(image_in,isTest=True),self.similarity.encoder(reference_in,isTest=True)
-                featuresa = channel_fusion(feature1a, feature2a,is_test=True)
-                image_real = self.similarity.decoder(featuresa)
-                #feature1b, feature2b = self.similarity.encoder(imag_part.unsqueeze(1),isTest=True),self.similarity.encoder(imag_part_ref.unsqueeze(1),isTest=True)
-                #featuresb = channel_fusion(feature1b, feature2b,is_test=True)
-                #image_imag = self.similarity.decoder(featuresb)
+            """
+            if iter < 3:
+                with torch.no_grad():    
+                    real_part = image[:,0,:, :].unsqueeze(1)
+                    imag_part = image[:,1,:, :].unsqueeze(1)
+                    real_part_ref = reference_image[:,0,:, :].unsqueeze(1)
+                    imag_part_ref = reference_image[:,1,:, :].unsqueeze(1)
+                    #phase = torch.atan2(imag_part, real_part)
+                    #image_in = torch.sqrt(real_part**2 + imag_part**2).unsqueeze(1)
+                    #reference_in = torch.sqrt(real_part_ref**2 + imag_part_ref**2).unsqueeze(1)
+                    #print(f'in real shape: {real_part.shape}')
+                    #print(f'in real-ref shape: {real_part_ref.shape}')
+                    #print(f'in similarity shape: {image_in.shape}')
+                    feature1a, feature2a = self.similarity.encoder(real_part,isTest=True),self.similarity.encoder(real_part_ref,isTest=True)
+                    featuresa = channel_fusion(feature1a, feature2a,is_test=True)
+                    image_real = self.similarity.decoder(featuresa)
+                    feature1b, feature2b = self.similarity.encoder(imag_part,isTest=True),self.similarity.encoder(imag_part_ref,isTest=True)
+                    featuresb = channel_fusion(feature1b, feature2b,is_test=True)
+                    image_imag = self.similarity.decoder(featuresb)
 
-                    #print(f'out similarity shape: {image.shape}')
-                real_part = image_real[:,0,:,:] * torch.cos(phase)
-                imag_part = image_real[:,0,:,:] * torch.sin(phase)
-                    #print(f'real_part shape: {real_part.shape}')
-                image = torch.stack((real_part, imag_part), dim=1)
+                #print(f'out similarity shape: {image_imag.shape}')
+                #real_part = image_real[:,0,:,:] * torch.cos(phase)
+                #imag_part = image_real[:,0,:,:] * torch.sin(phase)
+                #print(f'real_part out shape: {image_real.shape}')
+                image = 0.5 * torch.cat((image_real, image_imag), dim=1) + 0.5 * image
                 #print(f'real part shape: {real_part.shape}')
                 #print(f'image shape: {image.shape}')
             #print(f'image shape after concat {image.shape}')
+            """
             """
             ## Scans fusion
             if iter < 2:
