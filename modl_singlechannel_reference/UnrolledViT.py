@@ -91,7 +91,7 @@ class UnrolledViT(nn.Module):
     def freezer():
         for net in self.similaritynets:
             net.recon_net.net.forward_features.requires_grad_(False)
-            #net.recon_net.net.head.requires_grad_(False)
+            net.recon_net.net.head.requires_grad_(False)
         
 
     def forward(self, kspace, reference_image,init_image=None, mask=None):
@@ -156,12 +156,12 @@ class UnrolledViT(nn.Module):
                 refined_image_imag = similaritynet(imag_part,imag_part_ref) # mag_image,mag_ref
                 refined_image = similaritynet(mag_image,mag_ref)
                 #print(f'Vit out shape: {refined_image.shape}')
-                #image = torch.cat((refined_image*torch.cos(phase),refined_image*torch.sin(phase)),dim=1)
+                image = torch.cat((refined_image*torch.cos(phase),refined_image*torch.sin(phase)),dim=1)
                 #image = torch.cat((refined_image_real,refined_image_imag),dim=1)
                 #image = torch.sqrt(refined_image_real**2 + refined_image_imag**2)
                 image = refined_image
                 #image = torch.cat((refined_image,torch.zeros(refined_image.shape).to('cuda:0')),dim=1)
-                #image = image.permute(0, 2, 3, 1) # Permute back to original shape
+                image = image.permute(0, 2, 3, 1) # Permute back to original shape
 
 
 

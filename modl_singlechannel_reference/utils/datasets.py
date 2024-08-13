@@ -7,6 +7,7 @@ import numpy as np
 from torch.utils.data import Dataset
 from utils import transforms as T
 from utils import complex_utils as cplx
+from torchvision.transforms.functional import adjust_contrast 
 
 class SliceData(Dataset):
     """
@@ -52,7 +53,17 @@ class SliceData(Dataset):
                     ref_file = reference_files[0]
                     data = nib.load(file).get_fdata()
                     num_slices = data.shape[2]
-                    examples += [(file, ref_file, slice_idx) for slice_idx in range(num_slices)]
+                    #examples += [(file, ref_file, slice_idx) for slice_idx in range(num_slices)]
+                    ref_file = reference_files[0]
+                    data = nib.load(file).get_fdata()
+                    num_slices = data.shape[2]
+                    middle_slice = num_slices // 2
+                    for slice_idx in range(num_slices):
+                       #if slice_idx - 16>= 0 and slice_idx + 19 < num_slices:  
+                       if slice_idx - 4>= 0 and slice_idx + 4 < num_slices:
+                        #print(slice_idx) 
+                        #print(reference_pattern) 
+                        examples += [(file, ref_file, slice_idx)]
         return examples
 
     def __len__(self):
@@ -72,18 +83,20 @@ class SliceData(Dataset):
         target_torch = cplx.to_tensor(target).float() 
 
         ## Reduce contrast
-        #target_reduced = T.reduce_contrast(target.copy(),factor=1)
-        #target_reduced_torch = cplx.to_tensor(target_reduced).float() 
-        ##
-
         kspace_torch = T.fft2(target_torch)
+        #kspace_torch = T.kspace_cut(kspace_torch,0.67,0.67)
         kspace = cplx.to_numpy(kspace_torch)
+        #target_torch = T.ifft2(kspace_torch.clone())
+        #target = cplx.to_numpy(target_torch)
 
-        
         # Reference slice data
-        ref_target = ref_data[:, :, slice_idx]
-        ref_torch = cplx.to_tensor(target).float() 
+        ref_target = ref_data[:, :, slice_idx] * (torch.exp(1j * random_phase)).numpy() 
+        ref_target = ref_target.squeeze(0)
+        ref_torch = cplx.to_tensor(ref_target).float() 
         ref_kspace_torch = T.fft2(ref_torch)
+        #ref_kspace_torch = T.kspace_cut(ref_kspace_torch,0.67,0.67)
         ref_kspace = cplx.to_numpy(ref_kspace_torch)
+        #ref_target_torch = T.ifft2(ref_kspace_torch)
+        #ref_target = cplx.to_numpy(ref_target_torch)
 
         return self.transform( kspace, target, ref_kspace, ref_target, slice_idx)
