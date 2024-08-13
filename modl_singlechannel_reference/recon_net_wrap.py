@@ -59,9 +59,11 @@ class ViTfuser(nn.Module):
         self.epsilon = epsilon
         self.param1 = nn.Parameter(torch.normal(1, 0.01, size=(416,)))
         self.param2 = nn.Parameter(torch.normal(0, 0.01, size=(416,)))
+        #self.linear1 = nn.Linear(416*1024, 416*1024)
+        #self.linear2 = nn.Linear(416*1024, 416*1024)
+        #self.rg_image  = ResidualGroup(416, 5)
+        #self.rg_ref  = ResidualGroup(416, 5)
         """
-        self.rg_image  = ResidualGroup(416, 5)
-        self.rg_ref  = ResidualGroup(416, 5)
         self.rg_fusion  = ResidualGroup(416, 5)
         """
     def printer(self, x):
@@ -70,7 +72,8 @@ class ViTfuser(nn.Module):
 
     def forward(self, img,ref): #,ref
         # Norm
-        #print("Current value of param1 during forward:", self.param2)
+        #print("Current value of param1 during forward:", self.param1)
+        #print("Current value of param2 during forward:", self.param2)
         in_pad, wpad, hpad = self.recon_net.pad(img)
         ref_pad, wpad, hpad = self.recon_net.pad(ref)
         input_norm,mean,std = self.recon_net.norm(in_pad.float())
@@ -89,6 +92,7 @@ class ViTfuser(nn.Module):
         batch_size, num_channels, height = features.shape
         features_flat = features.reshape(batch_size, num_channels, -1)
         features_ref_flat = features_ref.reshape(batch_size, num_channels, -1)       
+        
         # Reshape params to match the dimensions
         param1_expanded = self.param1.reshape(1, -1, 1)  # Shape: [1, 416, 1]
         param2_expanded = self.param2.reshape(1, -1, 1)  # Shape: [1, 416, 1]
@@ -96,21 +100,24 @@ class ViTfuser(nn.Module):
         param1_expanded = param1_expanded.expand(batch_size, -1, height)  # Shape: [batch_size, 416, height*width]
         param2_expanded = param2_expanded.expand(batch_size, -1, height)  # Shape: [batch_size, 416, height*width]
         # Calculate weighted sum
+
         weighted_sum = (param1_expanded * features_flat + param2_expanded * features_ref_flat)
-        
+
+
         # Calculate normalization factor
         normalization_factor = param1_expanded + param2_expanded + self.epsilon
         
         # Normalize
         features_comb = weighted_sum / normalization_factor
         #features_comb = self.rg_fusion(features_comb.squeeze(0)).unsqueeze(0)     
-     
+
         # Reshape back to [1, 416, 1024]
         features_comb = features_comb.reshape(features_flat.shape[0], 416, 1024)
         
-        """
+        
         # Recon Head
-        head_out = self.recon_net.net.head(features)#0.5*features+0.5*features_ref 
+        head_out = self.recon_net.net.head(features_comb)
+        
         head_out_img = self.recon_net.net.seq2img(head_out, (260, 160))
 
         # un-norm
@@ -118,5 +125,5 @@ class ViTfuser(nn.Module):
 
         # un-pad 
         im_out = self.recon_net.unpad(merged,wpad,hpad)
-        """
-        return features_comb
+        
+        return im_out
