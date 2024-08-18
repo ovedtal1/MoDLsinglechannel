@@ -152,9 +152,10 @@ class UnrolledViT(nn.Module):
                 #print(combined_input.shape)
                 #mag_image = mag_image.permute(0, 3, 1, 2)
                 #mag_ref = mag_ref.permute(0, 3, 1, 2)  # Permute to [batch_size, channels, height, width]
-                refined_image_real = similaritynet(real_part,real_part_ref) # mag_image,mag_ref
-                refined_image_imag = similaritynet(imag_part,imag_part_ref) # mag_image,mag_ref
+                #refined_image_real = similaritynet(real_part,real_part_ref) # mag_image,mag_ref
+                #refined_image_imag = similaritynet(imag_part,imag_part_ref) # mag_image,mag_ref
                 refined_image = similaritynet(mag_image,mag_ref)
+                #refined_image_imag = similaritynet(imag_part,imag_part_ref)
                 #print(f'Vit out shape: {refined_image.shape}')
                 image = torch.cat((refined_image*torch.cos(phase),refined_image*torch.sin(phase)),dim=1)
                 #image = torch.cat((refined_image_real,refined_image_imag),dim=1)
@@ -181,5 +182,13 @@ class UnrolledViT(nn.Module):
             CG_alg = ConjGrad(Aop_fun=Sense.normal,b=rhs,verbose=False,l2lam=self.modl_lamda,max_iter=self.num_cg_steps)
             image = CG_alg.forward(rhs)
             """
-
+        ## Transfer to magnitude
+        """
+        image = image.permute(0,3,1,2)
+        #print(f'Image size: {image.shape}')
+        real_part = image[:,0,:,:].unsqueeze(1)
+        imag_part = image[:,1,:,:].unsqueeze(1)
+        mag_image = torch.sqrt(real_part**2 + imag_part**2)           
+        image = mag_image.permute(0, 2, 3, 1)
+        """
         return image
