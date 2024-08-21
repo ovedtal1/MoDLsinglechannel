@@ -269,7 +269,7 @@ class VGGPerceptualLoss(nn.Module):
         super().__init__()
         self.resize = resize
         self.feature_layers = feature_layers or self.DEFAULT_FEATURE_LAYERS
-        self.style_layers = style_layers or [3]
+        self.style_layers = style_layers or [2,3]
         features = torchvision.models.vgg16(pretrained=True).features
         self.blocks = nn.ModuleList([
             features[:4].eval(),
