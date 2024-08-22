@@ -281,6 +281,7 @@ class VGGPerceptualLoss(nn.Module):
             #param.requires_grad = False
         self.register_buffer("mean", torch.tensor(self.IMAGENET_MEAN).view(self.IMAGENET_SHAPE))
         self.register_buffer("std", torch.tensor(self.IMAGENET_STD).view(self.IMAGENET_SHAPE))
+        self.weights = [0, 1/1000, 1/5000, 1/100] # [1,1,1,1] #[0, 0, 1/1000, 1/40] - good res
 
     def _transform(self, tensor):
         if tensor.shape != self.IMAGENET_SHAPE:
@@ -308,7 +309,8 @@ class VGGPerceptualLoss(nn.Module):
                 loss += nn.functional.l1_loss(output, target)
             if i in self.style_layers:
                 gram_output, gram_target = self._calculate_gram(output), self._calculate_gram(target)
-                loss += nn.functional.l1_loss(gram_output, gram_target)
+                loss += nn.functional.l1_loss(gram_output, gram_target) *self.weights[i]
+                #print(f'i is: {i} and loss is :{nn.functional.l1_loss(gram_output, gram_target)*self.weights[i]}' )
         return loss
     
 
