@@ -399,3 +399,7 @@ def ifftshift(x, dim=None):
         shift = [(x.shape[i] + 1) // 2 for i in dim]
     return roll(x, shift, dim)
 
+def PSNR(input, target):
+    eps = 1e-8
+    return -10*torch.log10(torch.mean((input - target) ** 2, dim=[1, 2, 3])+eps)
+

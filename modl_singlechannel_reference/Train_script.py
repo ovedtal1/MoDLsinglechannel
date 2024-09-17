@@ -37,7 +37,7 @@ from models.UnrolledConvNext import UnrolledConvNext
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
+from models.UnrolledFusion import UnrolledFusion
 
 class Namespace:
     def __init__(self, **kwargs):
@@ -120,7 +120,7 @@ params.modl_lamda = 0.05
 params.lr = 0.0001
 params.weight_decay = 0
 params.lr_step_size = 20
-params.lr_gamma = 0.4
+params.lr_gamma = 0.3
 params.epoch = 81
 params.reference_mode = 0
 params.reference_lambda = 0.1
@@ -128,9 +128,11 @@ params.reference_lambda = 0.1
 train_loader = create_data_loaders(params)
 ## Load model and Loss selection
 #single_MoDL = UnrolledModel(params).to(device)
+single_MoDL = UnrolledFusion(params).to(device)
+single_MoDL.FusionModel.requires_grad_(False)
 #single_MoDL = UnrolledConvNext(params).to(device)
 #single_MoDL = Unrolled(params).to(device)
-single_MoDL = UnrolledRef(params).to(device)
+#single_MoDL = UnrolledRef(params).to(device)
 #single_MoDL = UnrolledTrans(params).to(device)
 optimizer = build_optim(params, single_MoDL.parameters())
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, params.lr_step_size, params.lr_gamma)
@@ -159,7 +161,7 @@ for epoch in range(params.epoch):
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        avg_loss = 0.99 * avg_loss + 0.01 * loss.item() if iter > 0 else loss.item()
+        avg_loss = 0.9 * avg_loss + 0.1 * loss.item() if iter > 0 else loss.item()
         #if iter % 125 == 0:
             #logging.info(
             #    f'Epoch = [{epoch:3d}/{params.epoch:3d}] '
@@ -167,7 +169,7 @@ for epoch in range(params.epoch):
             #    f'Loss = {loss.item():.4g} Avg Loss = {avg_loss:.4g}'
             #)
     #Saving the model
-    exp_dir = "L2_checkpoints_poisson_x2_SAunrolledRef/"
+    exp_dir = "L2_checkpoints_poisson_x2_FusionNet/"
     if epoch % 10 == 0:
         torch.save(
             {
@@ -192,7 +194,7 @@ plt.figure()
 plt.plot(epochs_plot, losses_plot, label='Training Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
-plt.title('SA unrolled with Reference L2 train Loss')
+plt.title('Unrolled + FusionNet L2 train Loss')
 plt.legend()
 plt.grid(True)
 plt.savefig(os.path.join(exp_dir, 'loss_plot_plato_down.png'))  # Save plot as an image

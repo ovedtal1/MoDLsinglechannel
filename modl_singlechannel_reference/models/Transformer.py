@@ -5,6 +5,8 @@ import math
 import numpy as np
 from models.features_extract import deep_features
 from models.extractor import ViTExtractor
+from pytorch_pretrained_vit import ViT
+
 
 """
 class ConvBlock(nn.Module):
@@ -322,8 +324,111 @@ class CustomDecoder(nn.Module):
         x = self.deconv_layers(x)
         return x
 
+def seq2img(self, x, img_size):
+        """
+        Transforms sequence back into image space, input dims: [batch_size, num_patches, channels]
+        output dims: [batch_size, channels, H, W]
+        """
+        x = x.view(x.shape[0], x.shape[1], self.in_chans, self.patch_size[0], self.patch_size[1])
+        x = x.chunk(x.shape[1], dim=1)
+        x = torch.cat(x, dim=4).permute(0,1,2,4,3)
+        x = x.chunk(img_size[0]//self.patch_size[0], dim=3)
+        x = torch.cat(x, dim=4).permute(0,1,2,4,3).squeeze(1)
+            
+        return x   
+
+def img_to_patch(x, patch_size, flatten_channels=True):
+    """
+    Inputs:
+        x - Tensor representing the image of shape [B, C, H, W]
+        patch_size - Number of pixels per dimension of the patches (integer)
+        flatten_channels - If True, the patches will be returned in a flattened format
+                           as a feature vector instead of a image grid.
+    """
+    B, C, H, W = x.shape
+    x = x.reshape(B, C, H // patch_size, patch_size, W // patch_size, patch_size)
+    x = x.permute(0, 2, 4, 1, 3, 5)  # [B, H', W', C, p_H, p_W]
+    x = x.flatten(1, 2)  # [B, H'*W', C, p_H, p_W]
+    if flatten_channels:
+        x = x.flatten(2, 4)  # [B, H'*W', C*p_H*p_W]
+    return x
+
+def patch_to_img(patches, patch_size, img_height, img_width, flatten_channels=True):
+    """
+    Inputs:
+        patches - Tensor representing the patches of shape [B, num_patches, patch_size*patch_size*C] if flatten_channels=True
+                  or [B, num_patches, C, patch_size, patch_size] if flatten_channels=False
+        patch_size - Number of pixels per dimension of the patches (integer)
+        img_height - Height of the original image
+        img_width - Width of the original image
+        flatten_channels - If True, the patches are in a flattened format as a feature vector,
+                           otherwise they are in image grid format.
+    """
+    B = patches.size(0)
+    if flatten_channels:
+        C = patches.size(2) // (patch_size * patch_size)
+        patches = patches.reshape(B, -1, C, patch_size, patch_size)
+    
+    num_patches = patches.size(1)
+    H_patches = img_height // patch_size
+    W_patches = img_width // patch_size
+    
+    patches = patches.view(B, H_patches, W_patches, C, patch_size, patch_size)
+    patches = patches.permute(0, 3, 1, 4, 2, 5)  # [B, C, H', p_H, W', p_W]
+    patches = patches.contiguous().reshape(B, C, img_height, img_width)
+    
+    return patches
+def pad_image_to_size(image, target_height, target_width):
+    """
+    Pads an image with zeros to the target size.
+
+    Inputs:
+        image - Tensor representing the image of shape [B, C, H, W]
+        target_height - Target height of the padded image
+        target_width - Target width of the padded image
+
+    Returns:
+        Padded image of shape [B, C, target_height, target_width]
+    """
+    B, C, H, W = image.shape
+    
+    # Calculate padding sizes
+    pad_height = (target_height - H) // 2
+    pad_width = (target_width - W) // 2
+    
+    padding = (pad_width, target_width - W - pad_width, pad_height, target_height - H - pad_height)
+    
+    # Apply padding
+    padded_image = F.pad(image, padding, mode='constant', value=0)
+    
+    return padded_image
+
+def unpad_image(padded_image, original_height, original_width):
+    """
+    Removes padding from a padded image to return it to its original size.
+
+    Inputs:
+        padded_image - Tensor representing the padded image of shape [B, C, H, W]
+        original_height - Original height of the image before padding
+        original_width - Original width of the image before padding
+
+    Returns:
+        Unpadded image of shape [B, C, original_height, original_width]
+    """
+    B, C, H, W = padded_image.shape
+    
+    # Calculate padding sizes
+    pad_height = (H - original_height) // 2
+    pad_width = (W - original_width) // 2
+    
+    # Unpad the image
+    unpadded_image = padded_image[:, :, pad_height:H-pad_height, pad_width:W-pad_width]
+    
+    return unpadded_image
+
+
 class TransUNet(nn.Module):
-    def __init__(self, img_channels, base_channels=128 ):
+    def __init__(self, img_channels, base_channels=128, device='cuda:0'):
         super(TransUNet, self).__init__()
         
         #self.encoder1 = ConvBlock(img_channels, base_channels)
@@ -332,24 +437,23 @@ class TransUNet(nn.Module):
         #self.encoder4 = ConvBlock(base_channels * 4, base_channels * 8)
         
         #self.pool = nn.MaxPool2d(2)
-        
+        self.device = device
         # Adjust dimensions to match the expected input size for the transformer
-        self.transformer = VisionTransformer(img_size=(32,20), patch_size=4, in_channels=1024, hidden_size=768, num_layers=12, num_attention_heads=12, mlp_dim=3072, dropout_rate=0.1, attention_dropout_rate=0.1)
-        
-        #self.up1 = UpBlock(base_channels * 8, base_channels * 4)
-        #self.up2 = UpBlock(base_channels * 4, base_channels * 2)
-        #self.up3 = UpBlock(base_channels * 2, base_channels)
-
+        #self.transformer = VisionTransformer(img_size=(32,20), patch_size=4, in_channels=1024, hidden_size=768, num_layers=12, num_attention_heads=12, mlp_dim=3072, dropout_rate=0.1, attention_dropout_rate=0.1)
+        self.num_features = 104832
+        in_chans = img_channels
+        self.patch_size = (8,8)
         
         #self.final_conv = nn.Conv2d(base_channels, img_channels, kernel_size=1)
         pretrained_weights = './dino_deitsmall8_pretrain_full_checkpoint.pth'
         self.extractor = ViTExtractor('dino_vits8', stride=8, model_dir=pretrained_weights, device='cuda:0')
-        self.decoder = CustomDecoder()
-
+        #self.vit = model = ViT('B_16_imagenet1k', pretrained=True)
+        #self.decoder = CustomDecoder()
+        #self.head = nn.Linear(self.num_features, in_chans*self.patch_size[0]*self.patch_size[1]) 
 
     def forward(self, x,reference_image):
         """
-        # Encoder
+        # Encoderss
         x1 = self.encoder1(x)
         #print(f'after encoder1: {x1.shape}')
         x2 = self.encoder2(self.pool(x1))
@@ -358,22 +462,55 @@ class TransUNet(nn.Module):
         #print(f'after encoder3: {x3.shape}')
         x4 = self.encoder4(self.pool(x3))
         """
-
+        x = x.to(self.device)
+        #_, _, H, W = x.shape
         # Transformer
+        
         #x = self.transformer(x4,reference_image)
         x = torch.cat([x,x[:,1,:,:].unsqueeze(1)],dim =1)
         #print(f'Before transformer: {x.shape}')
         #x = deep_features(x, self.extractor, layer=11, facet='key', bin=False, device='cuda:0')
-        with torch.no_grad():  # Disable gradient calculation for extractor
-            features = self.extractor.extract_descriptors(x, layer=11, facet='key', bin=False)
+        #with torch.no_grad():  # Disable gradient calculation for extractor
+        #z = img_to_patch(x,8)
+        #print(z.shape)
+        x = pad_image_to_size(x, 224, 224)
+        #print(x.shape)
+        features = self.extractor.extract_descriptors(x, layer=11, facet='key', bin=False)
+        #features = self.vit(x)
+        #print(features.shape)
 
+        #x = patch_to_img(features, 8, 176, 112)
 
-        #print(f'After transformer: {features.shape}')
-        x = self.decoder(features)
+        x = x[:,0:1,:,:]
+        x = unpad_image(x, 176, 112)
+        #print(x.shape)
+        #print(f'After dino: {features.shape}')
 
-
-
+        # Reshape the DINO output to (batch, deep_features_size, height_patches, width_patches)
         """
+        deep_features_size = features.shape[3]
+        patch_size = 8
+        batch_size = features.shape[0]
+        num_patches = (x.shape[2] // patch_size) * (x.shape[3] // patch_size)
+        height_patches = x.shape[2] // patch_size
+        width_patches = x.shape[3] // patch_size
+        features = features.reshape(batch_size, deep_features_size, height_patches, width_patches)
+    
+        # Upsample the patches
+        upsampled_patches = F.interpolate(features, size=(172, 108), mode='bilinear', align_corners=False)
+
+        linear_layer = torch.nn.Linear(deep_features_size, 2).to(self.device)  # 2 channels for the final image
+    
+        # Apply the linear layer to map deep features to image channels
+        reconstructed_image = linear_layer(upsampled_patches.permute(0, 2, 3, 1))  # (batch, height, width, deep_features)
+        x = reconstructed_image.permute(0, 3, 1, 2)  # (batch, channels, height, width)
+    
+        #x = self.decoder(features)
+        #x = self.head(features)
+        #x = self.seq2img(x, (H, W))
+
+
+        
         #print(f'size after transformer: {x3.size()}')
         # Decoder
         x = self.up1(x, x3)
@@ -382,8 +519,8 @@ class TransUNet(nn.Module):
         #print(f'size after up2: {x.size()}')
         x = self.up3(x, x1)
         #print(f'size after up3: {x.size()}')
+        
         """
-
         return x
     
 
