@@ -132,7 +132,6 @@ class UnrolledViT(nn.Module):
         # Begin unrolled proximal gradient descent
         iter = 1
         for resnet, similaritynet in zip(self.resnets, self.similaritynets):
-
             #print(image.shape)
             # Combine the output of ResNet with the reference image
             if (self.reference_mode == 1 ): # and iter != self.num_grad_steps
