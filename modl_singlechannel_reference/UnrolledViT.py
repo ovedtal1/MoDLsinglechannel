@@ -159,6 +159,7 @@ class UnrolledViT(nn.Module):
                 image = torch.cat((refined_image*torch.cos(phase),refined_image*torch.sin(phase)),dim=1)
                 #image = torch.cat((refined_image_real,refined_image_imag),dim=1)
                 #image = torch.sqrt(refined_image_real**2 + refined_image_imag**2)
+                # ADD / Remove !
                 image = refined_image
                 #image = torch.cat((refined_image,torch.zeros(refined_image.shape).to('cuda:0')),dim=1)
                 image = image.permute(0, 2, 3, 1) # Permute back to original shape

@@ -8,6 +8,9 @@ from torch.utils.data import Dataset
 from utils import transforms as T
 from utils import complex_utils as cplx
 from torchvision.transforms.functional import adjust_contrast 
+import torchvision.transforms as pt_transforms
+import torchvision.transforms.functional as TF
+from scipy.ndimage import rotate, shift
 
 class SliceData(Dataset):
     """
@@ -25,7 +28,7 @@ class SliceData(Dataset):
             sample_rate (float, optional): A float between 0 and 1. This controls what fraction
                 of the volumes should be loaded.
         """
-        self.transform = transform
+        self.transform = transform 
         self.examples = self._find_examples(root)
 
         if sample_rate < 1:
@@ -77,6 +80,13 @@ class SliceData(Dataset):
         ref_data = nib.load(ref_fname).get_fdata()
         
         target = data[:, :, slice_idx]
+        ## For hard augmenting
+        #random_angle = random.uniform(-90, 90)
+        #target = rotate(target, angle=random_angle, axes=(0, 1), reshape=False)
+        #random_shift_x = random.uniform(-20, 20)  # Adjust the shift range as needed
+        #random_shift_y = random.uniform(-20, 20)  # Adjust the shift range as needed
+        #target = shift(target, shift=[random_shift_x, random_shift_y])
+        
         random_phase = torch.angle(T.random_map((1,256,160), 'cpu',kspace_radius_range=(0.001, 0.001))) 
         target = target * (torch.exp(1j * random_phase)).numpy() 
         target = target.squeeze(0)

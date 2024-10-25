@@ -7,7 +7,7 @@ LICENSE file in the root directory of this source tree.
 
 import numpy as np
 from utils import complex_utils as cplx
-
+import math
 import torch
 from torch import nn
 class SenseModel_single(nn.Module):
@@ -449,12 +449,12 @@ def awgn_torch(sig,SNRdB,L=1):
     real_part = sig[...,0].numpy()
     imag_part = sig[...,1].numpy()
     s = real_part + 1j*imag_part
-    gamma = 10**(SNRdB/10) #SNR to linear scale
+    gamma = 10**(-SNRdB/10) #SNR to linear scale
     if s.ndim==1:# if s is single dimensional vector
         P=L*sum(abs(s)**2)/len(s) #Actual power in the vector
     else: # multi-dimensional signals like MFSK
         P=L*sum(sum(abs(s)**2))/np.size(s)#np.size(s) # if s is a matrix [MxN]
-    N0=P/gamma # Find the noise spectral density
+    N0=P*gamma # Find the noise spectral density
     if np.isrealobj(s):# check if input is real/complex object type
         n = np.sqrt(N0)*np.random.randn(s.shape[0],s.shape[1]) # computed noise
     else:
@@ -522,6 +522,17 @@ def PSNR(input, target):
     return -10*torch.log10(torch.mean((input - target) ** 2, dim=[1, 2, 3])+eps)
 
 
+def PSNR_numpy(input, target):
+    img1 = target * 255
+    img2 = input * 255
+    mse = np.mean(np.square(np.subtract(img1.astype(np.int16),
+                                        img2.astype(np.int16))))
+    if mse == 0:
+        return np.Inf
+    PIXEL_MAX = 255.0
+    return 20 * math.log10(PIXEL_MAX) - 10 * math.log10(mse)  
+
+
 def kspace_crop(tensor, r):
     """
     Zero out the edges of a tensor in both spatial dimensions by a factor of r.
@@ -552,7 +563,7 @@ def kspace_crop(tensor, r):
 
     return tensor_cropped
 
-def kspace_cut(tensor, r):
+def kspace_cut(tensor, r1,r2):
     """
     Zero out the edges of a tensor in both spatial dimensions by a factor of r.
     
@@ -565,11 +576,12 @@ def kspace_cut(tensor, r):
     Returns:
         torch.Tensor: Tensor with edges zeroed out by factor r, same size as input.
     """
-    assert 0 <= r <= 1, "Factor r should be between 0 and 1."
+    assert 0 <= r1 <= 1, "Factor r should be between 0 and 1."
+    assert 0 <= r2 <= 1, "Factor r should be between 0 and 1."
 
     A, B, C = tensor.shape
-    a_margin = int(A * (1 - r) / 2)
-    b_margin = int(B * (1 - r) / 2)
+    a_margin = int(A * (1 - r1) / 2)
+    b_margin = int(B * (1 - r2) / 2)
 
     
     # Zero out edges
