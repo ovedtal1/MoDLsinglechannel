@@ -73,8 +73,8 @@ class BilinearPoolingFusionNet(nn.Module):
         # Apply a convolution to project back to the original feature space
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=5,padding=2)
         self.conv2 = nn.Conv2d(in_channels=1, out_channels=1, kernel_size=5,padding=2)
-        self.param1 = nn.Parameter(torch.normal(1, 0.01, size=(198,)))
-        self.param2 = nn.Parameter(torch.normal(0, 0.01, size=(198,)))  
+        self.param1 = nn.Parameter(torch.normal(1, 0.00, size=(198,)))
+        self.param2 = nn.Parameter(torch.normal(0, 0.1, size=(198,)))  
         self.epsilon = 1e-6
         initialize_conv2d_as_delta(self.conv1,1)
         initialize_conv2d_as_delta(self.conv2,1)
@@ -137,18 +137,22 @@ class ViTfuser(nn.Module):
         self.recon_net = ReconNet(net).to(self.device)#.requires_grad_(False)
         self.recon_net_ref = ReconNet(net).to(self.device)
         # Load weights
+        """
         cp = torch.load('./lsdir-2x+hq50k_vit_epoch_60.pt', map_location=self.device)
         self.recon_net.load_state_dict(cp['model_state_dict'])
         self.recon_net_ref.load_state_dict(cp['model_state_dict'])
-
+        """
+        cp = torch.load('./L2_checkpoints_ViT_only/model_700.pt', map_location=self.device)
+        self.recon_net.load_state_dict(cp['model'])
+        self.recon_net_ref.load_state_dict(cp['model'])
         # Fusion layers
         self.epsilon = epsilon
         # High Resolution
         #self.param1 = nn.Parameter(torch.normal(1, 0.01, size=(416,)))
         #self.param2 = nn.Parameter(torch.normal(0, 0.01, size=(416,)))
         # Low Resolution
-        self.param1 = nn.Parameter(torch.normal(1, 0.01, size=(198,)))
-        self.param2 = nn.Parameter(torch.normal(0, 0.01, size=(198,)))
+        self.param1 = nn.Parameter(torch.normal(1, 0.0, size=(198,)))
+        self.param2 = nn.Parameter(torch.normal(0, 0.0, size=(198,)))
         #self.fuser = FeatureFusionBlock(in_channels=198,out_channels=198)
         """
         self.conv1_acq1 = nn.Conv1d(198, 198, kernel_size=3,padding=1, bias=False)
@@ -182,11 +186,13 @@ class ViTfuser(nn.Module):
         # Feature extract
         features = self.recon_net.net.forward_features(input_norm)#.permute(0,2,1)
         #features = self.conv1_acq1(features)
-
+        
         
         features_ref = self.recon_net_ref.net.forward_features(ref_norm)#.permute(0,2,1)
         #features_ref = self.conv1_acq1(features_ref)
         """
+        
+        ###### delete        
         acq1 = self.lrelu(self.conv1_acq1(features))
         acq2 = self.lrelu(self.conv1_acq2(features_ref))
 
@@ -198,10 +204,10 @@ class ViTfuser(nn.Module):
 
         # mRCAB processing
         features_ref = self.mrcab(features_ref)
+        
+        ###### delete
         """
-
-
-
+        
         #features = (features + features_ref)/2 
         #print(f'fetures shape: {features.shape}')
         # Fusion
@@ -218,6 +224,8 @@ class ViTfuser(nn.Module):
         param2_expanded = param2_expanded.expand(batch_size, -1, height)  # Shape: [batch_size, 416, height*width]
         # Calculate weighted sum
 
+        #print(f'features_flat shape: {features_flat.shape}')
+        #print(f'features_ref_flat shape: {features_ref_flat.shape}')
         weighted_sum = (param1_expanded * features_flat + param2_expanded * features_ref_flat)
 
         
