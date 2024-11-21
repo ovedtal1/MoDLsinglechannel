@@ -9,6 +9,7 @@ from utils import transforms as T
 from utils import complex_utils as cplx
 from torchvision.transforms.functional import adjust_contrast 
 import warnings
+from scipy.ndimage import rotate, shift
 
 class SliceData(Dataset):
     """
@@ -82,7 +83,20 @@ class SliceData(Dataset):
         ref_data = nifti_img_ref.get_fdata()
 
         target = data[:, :]
-        random_phase = torch.angle(T.random_map((1,172,108), 'cpu',kspace_radius_range=(0.001, 0.001))) 
+        
+        target = target.squeeze(0)
+        ## For hard augmenting
+        #print(f'Targert 1st: {target.shape}')
+        
+        random_angle = random.uniform(-10, 10) # was 90
+        target = rotate(target, angle=random_angle, axes=(0, 1), reshape=False)
+        random_shift_x = random.uniform(-3, 3)  # Adjust the shift range as needed # was 20
+        random_shift_y = random.uniform(-3, 3)  # Adjust the shift range as needed
+        target = shift(target, shift=[random_shift_x, random_shift_y])
+        
+        #print(f'Targert 2nd: {target.shape}')
+        
+        random_phase = torch.angle(T.random_map((1,172,108), 'cpu',kspace_radius_range=(0.001, 0.001))) *0
         target = target * (torch.exp(1j * random_phase)).numpy() 
         target = target.squeeze(0)
         target_torch = cplx.to_tensor(target).float() 
@@ -96,7 +110,15 @@ class SliceData(Dataset):
 
         # Reference slice data
         ref_target = ref_data[:, :] * (torch.exp(1j * random_phase)).numpy() 
+        #print(f'ref_target 1st: {ref_target.shape}')
         ref_target = ref_target.squeeze(0)
+
+        # Augment Reference
+        
+        ref_target = rotate(ref_target, angle=random_angle, axes=(0, 1), reshape=False)
+        ref_target = shift(ref_target, shift=[random_shift_x, random_shift_y])
+        #print(f'ref_target 2nd: {ref_target.shape}')
+        
         ref_torch = cplx.to_tensor(ref_target).float() 
         ref_kspace_torch = T.fft2(ref_torch)
         #ref_kspace_torch = T.kspace_cut(ref_kspace_torch,0.67,0.67)
